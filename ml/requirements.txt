@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────
+# requirements.txt — Python dependencies for the ML API
+# Install with:  pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────
+
+# YOLOv8 — Object detection model (Ultralytics)
+ultralytics==8.2.0
+
+# EasyOCR — Optical Character Recognition
+easyocr==1.7.1
+
+# Flask — Web framework for the REST API
+flask==3.0.3
+flask-cors==4.0.1
+
+# Image processing
+opencv-python-headless==4.9.0.80
+Pillow==10.3.0
+
+# Numerical computing
+numpy==1.24.4
+
+# HTTP library (used internally by many packages)
+requests==2.31.0
+
+# Environment variable management
+python-dotenv==1.0.1
+
+# ─── Optional: GPU Support ────────────────────────────────────
+# If you have an NVIDIA GPU, install PyTorch with CUDA support:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# Then set device="0" in train.py

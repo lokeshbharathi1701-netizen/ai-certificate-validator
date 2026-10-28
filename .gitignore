@@ -39,6 +39,7 @@ ml/temp_uploads/
 
 # ─── Uploads (server) ─────────────────────────────────────────
 server/uploads/
+temp_uploads/
 
 # ─── OS files ─────────────────────────────────────────────────
 .DS_Store

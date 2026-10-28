@@ -1,4 +1,4 @@
-# CertVerify AI — Certificate Forgery Detection System
+# CertVerify AI — Certificate Authenticity & Tampering Detection System
 
 AI-powered certificate authenticity verification using **YOLOv8** object detection and **EasyOCR** text extraction, presented through a stunning glassmorphism React frontend.
 

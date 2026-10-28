@@ -89,7 +89,8 @@ def extract_text(image_path: str) -> dict:
             "institute":          _extract_institute(text_lines, full_text),
             "date":               _extract_date(full_text),
             "course":             _extract_course(text_lines, full_text),
-            "raw_text":           text_lines[:20],
+            "raw_text":           text_lines,
+            "full_text":          full_text,
         }
 
         print(f"   Name     : {result['student']}")
@@ -170,6 +171,12 @@ def _is_plausible_name(text: str) -> bool:
         # Reject common stopwords (case-insensitive)
         if w_clean.lower() in _NAME_STOPWORDS:
             return False
+
+    # Avoid mistakenly treating course/institution headings as names
+    lower = text.lower()
+    false_name_indicators = ('certificate', 'certify', 'completion', 'programming', 'course', 'institute', 'internbyte', 'ministry', 'of')
+    if any(ind in lower for ind in false_name_indicators):
+        return False
 
     return True
 
@@ -311,6 +318,10 @@ def _extract_name(lines: list, full_text: str) -> str:
 def _extract_cert_number(text: str) -> str:
     """Extract certificate/serial number using regex patterns."""
     patterns = [
+        # Explicit certificate serial number (e.g. CERTIFICATE SL. NO. SEC: 24709979)
+        r'(?:certificate\s*sl\.?\s*no\.?|cert\.?\s*sl\.?\s*no\.?|sl\.?\s*no\.?)[\s:.\-–]+([A-Z0-9]{5,15})',
+        # Standalone 8-digit serial number at top of document
+        r'\b(24\d{6})\b',
         # "Certificate No: CERT2024001" or "Cert. No.: XYZ-123"
         r'(?:certificate|cert)\.?\s*(?:no|number|num|#|id)[.:\s]*([A-Z0-9][\w\-/]{3,20})',
         # "Serial/Ref/ID No.: …"
@@ -333,20 +344,30 @@ def _extract_cert_number(text: str) -> str:
 
 def _extract_date(text: str) -> str:
     """Extract issue/completion date from OCR text."""
+    # Pre-clean common OCR artifacts in date strings (e.g. 19.05,2023 -> 19.05.2023)
+    text_clean = re.sub(r'(\d{1,2})[\.,](\d{1,2})[\.,](\d{2,4})', r'\1.\2.\3', text)
+    text_clean = re.sub(r'(\d{1,2})[\/I](\d{1,2})[\/I](\d{2,4})', r'\1/\2/\3', text_clean)
+
     patterns = [
-        # DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-        r'\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})\b',
+        # Explicit TMR / Issue Date or Date label
+        r'(?:tmr.*?date|issue\s+date|date\s+of\s+issue|dated?)[\s:\-–]+(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})',
+        # Full date DD/MM/YYYY or DD.MM.YYYY
+        r'\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})\b',
         # 01 January 2024 or 1st January 2024
         r'\b(\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4})\b',
         # January 01, 2024 or January 1 2024
         r'\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})\b',
+        # Month Year: APR 2023
+        r'\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})\b',
+        # DD/MM/YY
+        r'\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2})\b',
         # YYYY-MM-DD (ISO)
         r'\b(\d{4}[-\/]\d{2}[-\/]\d{2})\b',
         # Just year: 2024
         r'\b(20\d{2})\b',
     ]
     for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
+        match = re.search(pattern, text_clean, re.IGNORECASE)
         if match:
             return match.group(1).strip()
     return "N/A"
@@ -363,6 +384,8 @@ def _extract_institute(lines: list, full_text: str) -> str:
     """
     # ── Priority 1: Strong keyword match ───────────────────────
     strong_keywords = [
+        "state board of school examinations", "state board",
+        "department of government examinations",
         "university", "college", "institute", "institution", "school",
         "academy", "foundation", "board", "council", "centre", "center",
         "polytechnic", "faculty", "department", "corporation",
@@ -371,6 +394,8 @@ def _extract_institute(lines: list, full_text: str) -> str:
     ]
     for line in lines:
         ll = line.lower()
+        if 'certificate' in ll or 'completion' in ll or 'of completion' in ll:
+            continue
         if any(kw in ll for kw in strong_keywords):
             return line.strip()
 
@@ -412,10 +437,21 @@ def _extract_institute(lines: list, full_text: str) -> str:
 
 
 def _extract_course(lines: list, full_text: str) -> str:
-    """Extract degree/course name from text."""
-    # ── Priority 1: Inline label ───────────────────────────────
+    """Extract degree/course/examination name from text."""
+    # ── Priority 1: Indian School Boards & Standard ────────────
+    school_kws = [
+        "secondary school leaving certificate", "sslc", "x standard",
+        "higher secondary", "hslc", "matriculation", "class x", "class xii",
+        "intermediate", "10th standard", "12th standard"
+    ]
+    for line in lines:
+        ll = line.lower()
+        if any(kw in ll for kw in school_kws):
+            return line.strip()
+
+    # ── Priority 2: Inline label ───────────────────────────────
     label_re = re.compile(
-        r'(?:course|program(?:me)?|degree|qualification|discipline)\s*[:\-–]\s*(.+)',
+        r'(?:course|program(?:me)?|degree|qualification|discipline|examination)\s*[:\-–]\s*(.+)',
         re.IGNORECASE
     )
     for i, line in enumerate(lines):
@@ -424,25 +460,26 @@ def _extract_course(lines: list, full_text: str) -> str:
             candidate = m.group(1).strip()
             if 2 <= len(candidate.split()) <= 10 and len(candidate) < 80:
                 return candidate
-            # Value on next line
             if i + 1 < len(lines):
                 return lines[i + 1].strip()
 
-    # ── Priority 2: Keyword match ──────────────────────────────
+    # ── Priority 3: Keyword match ──────────────────────────────
     strong_course_kws = [
         "bachelor", "master", "doctorate", "phd", "ph.d",
         "diploma", "advanced diploma", "post graduate", "postgraduate",
         "bsc", "msc", "b.sc", "m.sc",
         "b.tech", "m.tech", "btech", "mtech", "be ", "m.e",
         "mba", "bba", "b.com", "m.com", "bca", "mca",
-        "b.ed", "m.ed", "llb", "llm",
+        "b.ed", "m.ed", "llb", "llm", "python", "programming"
     ]
     for line in lines:
         ll = line.lower()
+        if 'certificate sl' in ll or 'serial' in ll or 'certificate no' in ll:
+            continue
         if any(kw in ll for kw in strong_course_kws):
             return line.strip()
 
-    # ── Priority 3: Broader course-related words ───────────────
+    # ── Priority 4: Broader course-related words ───────────────
     soft_kws = [
         "engineering", "science", "arts", "commerce", "technology",
         "management", "medicine", "pharmacy", "nursing", "law",
@@ -451,7 +488,10 @@ def _extract_course(lines: list, full_text: str) -> str:
         "course", "training", "certification", "workshop",
     ]
     for line in lines:
-        if any(kw in line.lower() for kw in soft_kws):
+        ll = line.lower()
+        if 'certificate sl' in ll or 'serial' in ll:
+            continue
+        if any(kw in ll for kw in soft_kws):
             return line.strip()
 
     return "N/A"

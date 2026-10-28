@@ -1,18 +1,18 @@
 /* UploadZone.jsx — Drag-and-drop certificate uploader */
 import { useState, useRef, useCallback } from 'react';
 
-const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp', 'image/tiff'];
-const FORMATS = ['JPG', 'PNG', 'BMP', 'WEBP', 'TIFF'];
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/bmp', 'image/webp', 'image/tiff', 'application/pdf'];
+const FORMATS = ['JPG', 'PNG', 'BMP', 'WEBP', 'TIFF', 'PDF'];
 
 function formatBytes(bytes) {
-  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024)        return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
   const [dragOver, setDragOver] = useState(false);
-  const [error, setError] = useState('');
+  const [error,    setError]    = useState('');
   const inputRef = useRef(null);
 
   const validateAndSet = useCallback((f) => {
@@ -22,8 +22,8 @@ export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
       setError('File is too large. Maximum size is 10 MB.');
       return;
     }
-    if (!ACCEPTED_TYPES.includes(f.type) && !f.name.match(/\.(jpg|jpeg|png|bmp|webp|tiff|tif)$/i)) {
-      setError('Unsupported file type. Please upload a JPG, PNG, BMP, WEBP, or TIFF image.');
+    if (!ACCEPTED_TYPES.includes(f.type) && !f.name.match(/\.(jpg|jpeg|png|bmp|webp|tiff|tif|pdf)$/i)) {
+      setError('Unsupported file type. Please upload a JPG/PNG/BMP/WEBP/TIFF image or a PDF.');
       return;
     }
     onFileSelect(f);
@@ -36,34 +36,39 @@ export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
     validateAndSet(dropped);
   }, [validateAndSet]);
 
-  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true); };
-  const handleDragLeave = () => setDragOver(false);
+  const handleDragOver  = (e) => { e.preventDefault(); setDragOver(true);  };
+  const handleDragLeave = ()  => setDragOver(false);
 
   const handleFileInput = (e) => {
     validateAndSet(e.target.files[0]);
-    e.target.value = '';
+    e.target.value = ''; // allow re-picking same file
   };
 
   const previewUrl = file ? URL.createObjectURL(file) : null;
+
+  // Clicking the zone (when no file) → open file picker
+  const handleZoneClick = () => {
+    if (!file) inputRef.current?.click();
+  };
 
   return (
     <div>
       <div
         id="upload-zone"
-        className={`upload-zone${dragOver ? ' drag-over' : ''}`}
+        className={`upload-zone${dragOver ? ' drag-over' : ''}${file ? ' has-file' : ''}`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={() => !file && inputRef.current?.click()}
+        onClick={handleZoneClick}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && !file && inputRef.current?.click()}
+        onKeyDown={(e) => e.key === 'Enter' && handleZoneClick()}
         aria-label="Upload certificate image"
       >
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           style={{ display: 'none' }}
           onChange={handleFileInput}
           id="file-input"
@@ -75,7 +80,7 @@ export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
               <span className="upload-icon">📄</span>
             </div>
             <p className="upload-title">
-              {dragOver ? 'Drop it here!' : 'Drop your certificate here'}
+              {dragOver ? '📥 Drop it here!' : 'Drop your certificate here'}
             </p>
             <p className="upload-sub">or click to browse from your device</p>
             <button
@@ -93,23 +98,33 @@ export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
         ) : (
           <>
             <div className="upload-preview" onClick={(e) => e.stopPropagation()}>
-              <img src={previewUrl} alt="Certificate preview" />
+              {file.type && file.type.startsWith('image/') ? (
+                <img src={previewUrl} alt="Certificate preview" />
+              ) : (
+                <div style={{ width: 80, height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 8, color: '#111', fontWeight: 700 }}>
+                  📄 PDF
+                </div>
+              )}
               <div className="preview-info">
-                <p className="file-name">{file.name}</p>
+                <p className="file-name" title={file.name}>{file.name}</p>
                 <p className="file-size">{formatBytes(file.size)}</p>
               </div>
             </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '10px' }}>
-              Click to replace image
-            </p>
+            {/* Replace button — explicit click, doesn't propagate to zone */}
+            <button
+              type="button"
+              className="replace-btn"
+              id="replace-btn"
+              onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+            >
+              🔄 Replace Image
+            </button>
           </>
         )}
       </div>
 
       {error && (
-        <p style={{ color: 'var(--red)', fontSize: '0.82rem', marginTop: '8px', textAlign: 'center' }}>
-          ⚠ {error}
-        </p>
+        <p className="upload-error" id="upload-error-msg">⚠ {error}</p>
       )}
 
       {file && (
@@ -121,7 +136,7 @@ export default function UploadZone({ onFileSelect, file, onAnalyse, loading }) {
         >
           {loading ? (
             <>
-              <span style={{ display: 'inline-block', width: 18, height: 18, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }}></span>
+              <span className="btn-spinner" />
               Analysing…
             </>
           ) : (
